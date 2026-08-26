@@ -1,13 +1,15 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Recipe, Ingredient } from '@/types';
+import { Recipe, Ingredient, MealType, PlannedMeal } from '@/types';
 
 type ExtendedRecipe = Recipe & {
   sourceUrl?: string;
 };
 
 const CATEGORIES: Recipe['category'][] = ['Petit dej', 'Snack', 'Repas', 'Dessert'];
+const MEAL_TYPES: MealType[] = ['Petit dej', 'Déjeuner', 'Dîner', 'Snack'];
+const DAYS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 
 const NUTRITIONAL_DATABASE: Record<string, { calories: number; protein: number; carbs: number; fat: number; defaultUnit: string }> = {
   'avoine': { calories: 389, protein: 16.9, carbs: 66, fat: 6.9, defaultUnit: 'g' },
@@ -69,12 +71,19 @@ export default function RecipeManager() {
   const [showForm, setShowForm] = useState(false);
   const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null);
 
-  // État de consultation de recette
+  // Vue modale consultation
   const [viewingRecipe, setViewingRecipe] = useState<ExtendedRecipe | null>(null);
   const [viewServings, setViewServings] = useState<number>(1);
-  const [viewPerServingMode, setViewPerServingMode] = useState<boolean>(true); // true = par portion, false = total recette
+  const [viewPerServingMode, setViewPerServingMode] = useState<boolean>(true);
 
-  // Formulaire
+  // Modale planification au menu
+  const [showAddToPlanModal, setShowAddToPlanModal] = useState(false);
+  const [planDay, setPlanDay] = useState<string>('Lundi');
+  const [planMealType, setPlanMealType] = useState<MealType>('Déjeuner');
+  const [planServings, setPlanServings] = useState<number>(1);
+  const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
+
+  // Formulaire de recette
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<Recipe['category']>('Repas');
   const [prepTimeMinutes, setPrepTimeMinutes] = useState(15);
@@ -86,7 +95,7 @@ export default function RecipeManager() {
     { name: '', amount: 100, unit: 'g', calories: 0, protein: 0, carbs: 0, fat: 0 },
   ]);
 
-  // Import rapide (Texte)
+  // Importation rapide de texte
   const [rawText, setRawText] = useState('');
   const [importMode, setImportMode] = useState(false);
 
@@ -96,7 +105,7 @@ export default function RecipeManager() {
       try {
         setRecipes(JSON.parse(saved));
       } catch (e) {
-        console.error('Erreur chargement recettes', e);
+        console.error('Erreur lors du chargement des recettes:', e);
       }
     }
   }, []);
@@ -122,6 +131,7 @@ export default function RecipeManager() {
   const openRecipeView = (recipe: ExtendedRecipe) => {
     setViewingRecipe(recipe);
     setViewServings(recipe.baseServings || 1);
+    setPlanServings(recipe.baseServings || 1);
   };
 
   const startEditRecipe = (recipe: ExtendedRecipe) => {
@@ -247,6 +257,28 @@ export default function RecipeManager() {
     setIngredients(updated);
   };
 
+  const addIngredientRow = () => {
+    setIngredients([...ingredients, { name: '', amount: 100, unit: 'g', calories: 0, protein: 0, carbs: 0, fat: 0 }]);
+  };
+
+  const removeIngredientRow = (index: number) => {
+    setIngredients(ingredients.filter((_, i) => i !== index));
+  };
+
+  const addInstructionRow = () => {
+    setInstructions([...instructions, '']);
+  };
+
+  const updateInstructionRow = (index: number, value: string) => {
+    const updated = [...instructions];
+    updated[index] = value;
+    setInstructions(updated);
+  };
+
+  const removeInstructionRow = (index: number) => {
+    setInstructions(instructions.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
@@ -283,8 +315,51 @@ export default function RecipeManager() {
   };
 
   const handleDelete = (id: string) => {
-    saveRecipes(recipes.filter((r) => r.id !== id));
-    if (viewingRecipe?.id === id) setViewingRecipe(null);
+    if (confirm('Voulez-vous supprimer cette recette ?')) {
+      saveRecipes(recipes.filter((r) => r.id !== id));
+      if (viewingRecipe?.id === id) setViewingRecipe(null);
+    }
+  };
+
+  const handleAddToWeeklyPlan = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!viewingRecipe) return;
+
+    const savedPlan = localStorage.getItem('nutriplanner_weekly_plan');
+    let weeklyPlan: Record<string, PlannedMeal[]> = {};
+
+    if (savedPlan) {
+      try { weeklyPlan = JSON.parse(savedPlan); } catch (e) { console.error(e); }
+    }
+
+    DAYS.forEach((d) => { if (!weeklyPlan[d]) weeklyPlan[d] = []; });
+
+    const baseServ = viewingRecipe.baseServings || 1;
+    const ratio = planServings / baseServ;
+
+    const totalKcal = viewingRecipe.ingredients.reduce((a, b) => a + (b.calories || 0), 0) * ratio;
+    const totalProt = viewingRecipe.ingredients.reduce((a, b) => a + (b.protein || 0), 0) * ratio;
+    const totalCarbs = viewingRecipe.ingredients.reduce((a, b) => a + (b.carbs || 0), 0) * ratio;
+    const totalFat = viewingRecipe.ingredients.reduce((a, b) => a + (b.fat || 0), 0) * ratio;
+
+    const newMeal: PlannedMeal = {
+      id: Date.now().toString(),
+      recipeId: viewingRecipe.id,
+      recipeTitle: viewingRecipe.title,
+      mealType: planMealType,
+      servings: planServings,
+      calories: Math.round(totalKcal),
+      protein: Math.round(totalProt),
+      carbs: Math.round(totalCarbs),
+      fat: Math.round(totalFat),
+    };
+
+    weeklyPlan[planDay] = [...(weeklyPlan[planDay] || []), newMeal];
+    localStorage.setItem('nutriplanner_weekly_plan', JSON.stringify(weeklyPlan));
+
+    setShowAddToPlanModal(false);
+    setFeedbackMsg(`Recette ajoutée au ${planDay} (${planMealType}) !`);
+    setTimeout(() => setFeedbackMsg(null), 3000);
   };
 
   const filteredRecipes = recipes.filter((r) => {
@@ -293,21 +368,18 @@ export default function RecipeManager() {
     return matchCat && matchSearch;
   });
 
-  // Calculs pour la vue détaillée (avec ratio de portions)
+  // Calculs pour la vue détaillée (portions)
   const servingRatio = viewingRecipe ? viewServings / (viewingRecipe.baseServings || 1) : 1;
-
   const totalRecipeKcal = viewingRecipe ? viewingRecipe.ingredients.reduce((a, b) => a + (b.calories || 0), 0) : 0;
   const totalRecipeProt = viewingRecipe ? viewingRecipe.ingredients.reduce((a, b) => a + (b.protein || 0), 0) : 0;
   const totalRecipeCarbs = viewingRecipe ? viewingRecipe.ingredients.reduce((a, b) => a + (b.carbs || 0), 0) : 0;
   const totalRecipeFat = viewingRecipe ? viewingRecipe.ingredients.reduce((a, b) => a + (b.fat || 0), 0) : 0;
 
-  // Valeurs calculées selon le nombre de portions sélectionné
   const currentTotalKcal = totalRecipeKcal * servingRatio;
   const currentTotalProt = totalRecipeProt * servingRatio;
   const currentTotalCarbs = totalRecipeCarbs * servingRatio;
   const currentTotalFat = totalRecipeFat * servingRatio;
 
-  // Valeurs affichées selon le mode (Par portion ou Total sélectionné)
   const displayKcal = viewPerServingMode ? currentTotalKcal / viewServings : currentTotalKcal;
   const displayProt = viewPerServingMode ? currentTotalProt / viewServings : currentTotalProt;
   const displayCarbs = viewPerServingMode ? currentTotalCarbs / viewServings : currentTotalCarbs;
@@ -315,35 +387,139 @@ export default function RecipeManager() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap justify-between items-center gap-4">
-        <h1 className="text-2xl font-bold text-gray-800">Catalogue des Recettes</h1>
+      <div className="flex flex-wrap justify-between items-center gap-4 bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">Catalogue des Recettes</h1>
+          <p className="text-xs text-gray-500 mt-0.5">Gérez vos plats et calculez vos macronutriments.</p>
+        </div>
         <button
           onClick={() => {
             if (showForm) resetForm();
             setShowForm(!showForm);
           }}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-4 rounded-lg shadow transition"
+          className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-4 rounded-xl text-xs shadow transition"
         >
           {showForm ? 'Fermer' : '+ Ajouter une recette'}
         </button>
       </div>
 
+      {feedbackMsg && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold px-4 py-3 rounded-xl flex items-center justify-between shadow-sm">
+          <span>✅ {feedbackMsg}</span>
+          <button onClick={() => setFeedbackMsg(null)} className="text-emerald-600 font-bold">✕</button>
+        </div>
+      )}
+
+      {/* Barres d'action : Filtres & Recherche */}
+      <div className="flex flex-wrap gap-3 items-center justify-between">
+        <div className="flex gap-1 bg-gray-100 p-1 rounded-xl text-xs font-medium">
+          <button
+            onClick={() => setSelectedCategory('Toutes')}
+            className={`px-3 py-1.5 rounded-lg transition ${selectedCategory === 'Toutes' ? 'bg-white text-emerald-700 font-bold shadow-sm' : 'text-gray-600'}`}
+          >
+            Toutes
+          </button>
+          {CATEGORIES.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              className={`px-3 py-1.5 rounded-lg transition ${selectedCategory === cat ? 'bg-white text-emerald-700 font-bold shadow-sm' : 'text-gray-600'}`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+
+        <input
+          type="text"
+          placeholder="🔎 Rechercher une recette..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="p-2 border border-gray-200 rounded-xl text-xs w-full sm:w-64 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+        />
+      </div>
+
+      {/* Grille des Recettes */}
+      {filteredRecipes.length === 0 ? (
+        <div className="bg-white rounded-2xl p-12 text-center border border-gray-100 shadow-sm space-y-2">
+          <span className="text-4xl">🍲</span>
+          <h3 className="text-sm font-bold text-gray-700">Aucune recette trouvée</h3>
+          <p className="text-xs text-gray-500">Ajoutez-en une via le bouton ci-dessus.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {filteredRecipes.map((recipe) => {
+            const totalKcal = recipe.ingredients.reduce((a, b) => a + (b.calories || 0), 0);
+            return (
+              <div
+                key={recipe.id}
+                onClick={() => openRecipeView(recipe)}
+                className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition cursor-pointer overflow-hidden flex flex-col justify-between group"
+              >
+                <div>
+                  {recipe.imageUrl ? (
+                    <div className="h-40 w-full overflow-hidden bg-gray-100 relative">
+                      <img
+                        src={recipe.imageUrl}
+                        alt={recipe.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                      />
+                    </div>
+                  ) : (
+                    <div className="h-24 w-full bg-gradient-to-br from-emerald-50 to-teal-50 flex items-center justify-center text-3xl">
+                      🥗
+                    </div>
+                  )}
+
+                  <div className="p-4 space-y-2">
+                    <div className="flex justify-between items-start gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded border border-emerald-100">
+                        {recipe.category}
+                      </span>
+                      <span className="text-xs font-semibold text-gray-500">
+                        ⏱️ {recipe.prepTimeMinutes || 15} min
+                      </span>
+                    </div>
+
+                    <h3 className="font-bold text-gray-800 group-hover:text-emerald-600 transition text-base leading-snug">
+                      {recipe.title}
+                    </h3>
+
+                    <p className="text-xs text-gray-500 line-clamp-2">
+                      {recipe.ingredients.map((i) => i.name).join(', ')}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="px-4 py-3 bg-gray-50/80 border-t border-gray-100 flex justify-between items-center text-xs text-gray-600 font-medium">
+                  <span>{recipe.baseServings} portion(s)</span>
+                  <span className="font-bold text-amber-700">{Math.round(totalKcal)} kcal</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Modal Consultation Recette */}
       {viewingRecipe && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden my-8 border border-gray-100 animate-fadeIn">
-            {/* Header Image */}
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden my-8 border border-gray-100 relative">
+            
+            {/* Header Image & Bouton Fermer */}
             <div className="relative h-64 bg-gray-100 flex items-center justify-center">
               {viewingRecipe.imageUrl ? (
                 <img src={viewingRecipe.imageUrl} alt={viewingRecipe.title} className="w-full h-full object-cover" />
               ) : (
                 <div className="text-center p-4">
-                  <p className="text-gray-400 text-sm mb-2">Aucune photo pour le moment</p>
+                  <p className="text-gray-400 text-sm">Aucune photo pour le moment</p>
                 </div>
               )}
+
               <button
                 onClick={() => setViewingRecipe(null)}
-                className="absolute top-3 right-3 bg-white/80 hover:bg-white text-gray-700 w-8 h-8 rounded-full flex items-center justify-center font-bold shadow transition"
+                className="absolute top-3 right-3 bg-white/90 hover:bg-white text-gray-700 w-9 h-9 rounded-full flex items-center justify-center font-bold shadow transition"
+                title="Fermer la vue"
               >
                 ✕
               </button>
@@ -351,7 +527,7 @@ export default function RecipeManager() {
 
             <div className="p-6 space-y-6">
               {/* Entête recette */}
-              <div className="flex justify-between items-start gap-4">
+              <div className="flex justify-between items-start gap-4 border-b pb-4">
                 <div>
                   <span className="text-xs font-semibold px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full inline-block mb-2">
                     {viewingRecipe.category}
@@ -359,14 +535,14 @@ export default function RecipeManager() {
                   <h2 className="text-2xl font-bold text-gray-800">{viewingRecipe.title}</h2>
                   <div className="flex gap-4 text-xs text-gray-500 mt-1">
                     <span>⏱️ Prep: {viewingRecipe.prepTimeMinutes} min</span>
-                    <span>🍽️ Recette originale de {viewingRecipe.baseServings} portion(s)</span>
+                    <span>🍽️ Recette de base pour {viewingRecipe.baseServings} portion(s)</span>
                   </div>
                 </div>
 
                 <div className="flex flex-col gap-2 items-end">
                   <button
                     onClick={() => startEditRecipe(viewingRecipe)}
-                    className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-medium px-3 py-1.5 rounded-lg text-sm transition border border-emerald-200"
+                    className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold px-3 py-1.5 rounded-lg text-xs transition border border-emerald-200"
                   >
                     ✏️ Modifier
                   </button>
@@ -378,17 +554,17 @@ export default function RecipeManager() {
                       rel="noopener noreferrer"
                       className="bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold px-3 py-1.5 rounded-lg text-xs transition border border-blue-200 flex items-center gap-1"
                     >
-                      🔗 Voir la recette d'origine
+                      🔗 Recette d'origine
                     </a>
                   )}
                 </div>
               </div>
 
-              {/* Ajustement dynamique du nombre de personnes */}
+              {/* Ajustement dynamique des portions */}
               <div className="bg-emerald-50/80 p-4 rounded-xl border border-emerald-200/80 flex flex-wrap justify-between items-center gap-4">
                 <div>
                   <label className="text-xs font-bold text-emerald-900 uppercase block">Portions à préparer</label>
-                  <p className="text-xs text-emerald-700">Ajuste les quantités et les macros en direct</p>
+                  <p className="text-xs text-emerald-700">Ajuste automatiquement les ingrédients et macros</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -416,10 +592,10 @@ export default function RecipeManager() {
                 </div>
               </div>
 
-              {/* Résumé Macronutriments & Commutateur (Par portion / Total) */}
+              {/* Commutateur Macros (Par portion / Total) */}
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold text-gray-500 uppercase">Apports Nutritionnels</span>
+                  <span className="text-xs font-bold text-gray-500 uppercase">Macros Nutritionnels</span>
                   <div className="flex bg-gray-100 p-0.5 rounded-lg text-xs font-medium">
                     <button
                       type="button"
@@ -438,22 +614,22 @@ export default function RecipeManager() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-4 gap-2 bg-gray-50 p-3 rounded-xl text-center border border-gray-100">
+                <div className="grid grid-cols-4 gap-2 bg-gray-50 p-3 rounded-xl text-center border border-gray-100 font-mono">
                   <div>
-                    <span className="block text-xs font-bold text-amber-700 uppercase">Kcal</span>
-                    <span className="text-lg font-extrabold text-amber-900">{Math.round(displayKcal)}</span>
+                    <span className="block text-[10px] font-bold text-amber-700 uppercase">CALORIES</span>
+                    <span className="text-base font-extrabold text-amber-900">{Math.round(displayKcal)} kcal</span>
                   </div>
                   <div>
-                    <span className="block text-xs font-bold text-emerald-700 uppercase">Prot</span>
-                    <span className="text-lg font-extrabold text-emerald-900">{Math.round(displayProt)}g</span>
+                    <span className="block text-[10px] font-bold text-emerald-700 uppercase">PROTÉINES</span>
+                    <span className="text-base font-extrabold text-emerald-900">{Math.round(displayProt)}g</span>
                   </div>
                   <div>
-                    <span className="block text-xs font-bold text-blue-700 uppercase">Gluc</span>
-                    <span className="text-lg font-extrabold text-blue-900">{Math.round(displayCarbs)}g</span>
+                    <span className="block text-[10px] font-bold text-blue-700 uppercase">GLUCIDES</span>
+                    <span className="text-base font-extrabold text-blue-900">{Math.round(displayCarbs)}g</span>
                   </div>
                   <div>
-                    <span className="block text-xs font-bold text-rose-700 uppercase">Lip</span>
-                    <span className="text-lg font-extrabold text-rose-900">{Math.round(displayFat)}g</span>
+                    <span className="block text-[10px] font-bold text-rose-700 uppercase">LIPIDES</span>
+                    <span className="text-base font-extrabold text-rose-900">{Math.round(displayFat)}g</span>
                   </div>
                 </div>
               </div>
@@ -461,20 +637,16 @@ export default function RecipeManager() {
               {/* Ingrédients adaptatifs */}
               <div className="space-y-2">
                 <h3 className="font-bold text-gray-800 border-b pb-1 text-sm flex justify-between items-center">
-                  <span>Ingrédients requis</span>
-                  <span className="text-xs font-normal text-gray-500">
-                    Ajustés pour {viewServings} portion(s)
-                  </span>
+                  <span>Ingrédients</span>
+                  <span className="text-xs font-normal text-gray-500">Pour {viewServings} portion(s)</span>
                 </h3>
-                <ul className="divide-y divide-gray-100 text-sm">
+                <ul className="divide-y divide-gray-100 text-xs bg-gray-50/60 rounded-xl p-3 border border-gray-100 space-y-1.5">
                   {viewingRecipe.ingredients.map((ing, idx) => {
                     const adjustedAmount = Number((ing.amount * servingRatio).toFixed(1));
                     return (
-                      <li key={idx} className="py-2 flex justify-between items-center text-gray-700">
-                        <span className="font-medium">
-                          • <span className="text-emerald-700 font-bold">{adjustedAmount}</span> {ing.unit} {ing.name}
-                        </span>
-                        <span className="text-xs text-gray-400 font-mono">
+                      <li key={idx} className="flex justify-between items-center text-gray-700 pt-1">
+                        <span>• <strong className="text-emerald-700 font-bold">{adjustedAmount} {ing.unit}</strong> {ing.name}</span>
+                        <span className="text-[11px] text-gray-400 font-mono">
                           {Math.round(ing.calories * servingRatio)} kcal
                         </span>
                       </li>
@@ -485,26 +657,23 @@ export default function RecipeManager() {
 
               {/* Instructions */}
               <div className="space-y-2">
-                <h3 className="font-bold text-gray-800 border-b pb-1 text-sm">Instructions de préparation</h3>
+                <h3 className="font-bold text-gray-800 border-b pb-1 text-sm">Étapes de préparation</h3>
                 {viewingRecipe.instructions && viewingRecipe.instructions.length > 0 ? (
-                  <ol className="space-y-2.5 text-sm text-gray-700">
+                  <ol className="space-y-2 text-xs text-gray-700 bg-gray-50/60 rounded-xl p-3 border border-gray-100 list-decimal list-inside">
                     {viewingRecipe.instructions.map((inst, idx) => (
-                      <li key={idx} className="flex gap-2">
-                        <span className="font-bold text-emerald-600 min-w-[20px]">{idx + 1}.</span>
-                        <p className="flex-1 leading-relaxed">{inst}</p>
-                      </li>
+                      <li key={idx} className="leading-relaxed">{inst}</li>
                     ))}
                   </ol>
                 ) : (
-                  <p className="text-xs italic text-gray-400">Aucune instruction enregistrée pour cette recette.</p>
+                  <p className="text-xs italic text-gray-400">Aucune étape enregistrée.</p>
                 )}
               </div>
 
-              {/* Photos & Liens */}
+              {/* Photo & Lien (édition directe) */}
               <div className="bg-gray-50 p-3.5 rounded-xl border border-gray-200/80 space-y-3">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                   <div>
-                    <label className="font-semibold text-gray-700 block mb-1">📁 Modifier photo (fichier local)</label>
+                    <label className="font-semibold text-gray-700 block mb-1">📁 Importer/Remplacer photo</label>
                     <input
                       type="file"
                       accept="image/*"
@@ -513,7 +682,7 @@ export default function RecipeManager() {
                     />
                   </div>
                   <div>
-                    <label className="font-semibold text-gray-700 block mb-1">🔗 Lien source / URL de la recette</label>
+                    <label className="font-semibold text-gray-700 block mb-1">🔗 Lien source (URL)</label>
                     <input
                       type="url"
                       placeholder="https://..."
@@ -528,6 +697,34 @@ export default function RecipeManager() {
                   </div>
                 </div>
               </div>
+
+              {/* Pied de Modale : Boutons Actions */}
+              <div className="border-t pt-4 flex flex-wrap gap-2 justify-between items-center">
+                <button
+                  type="button"
+                  onClick={() => handleDelete(viewingRecipe.id)}
+                  className="text-rose-600 hover:text-rose-700 text-xs font-semibold px-3 py-2 rounded-xl hover:bg-rose-50 transition"
+                >
+                  🗑️ Supprimer
+                </button>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowAddToPlanModal(true)}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs transition shadow-sm flex items-center gap-1.5"
+                  >
+                    <span>📅</span>
+                    <span>Ajouter au planning</span>
+                  </button>
+
+                  <button
+                    onClick={() => setViewingRecipe(null)}
+                    className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold px-4 py-2 rounded-xl text-xs transition"
+                  >
+                    Fermer
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -535,36 +732,32 @@ export default function RecipeManager() {
 
       {/* Formulaire de Création / Modification */}
       {showForm && (
-        <form onSubmit={handleSubmit} className="bg-white p-6 rounded-xl shadow-md border border-gray-100 space-y-6">
-          <div className="flex justify-between items-center">
-            <h2 className="text-xl font-semibold text-gray-700">
+        <form onSubmit={handleSubmit} className="bg-white p-6 rounded-2xl shadow-md border border-gray-100 space-y-6">
+          <div className="flex justify-between items-center border-b pb-3">
+            <h2 className="text-lg font-bold text-gray-800">
               {editingRecipeId ? '✏️ Modifier la Recette' : 'Nouvelle Recette'}
             </h2>
-            {editingRecipeId && (
-              <button type="button" onClick={resetForm} className="text-xs text-gray-500 hover:underline">
-                Annuler la modification
-              </button>
-            )}
+            <button type="button" onClick={() => setShowForm(false)} className="text-gray-400 font-bold hover:text-gray-600">✕</button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Titre de la recette</label>
+              <label className="block font-semibold text-gray-700 mb-1">Titre de la recette</label>
               <input
                 type="text"
                 required
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Ex: Carrot Button Noodles"
-                className="w-full p-2 border border-gray-300 rounded-md"
+                placeholder="Ex: Bowl Saumon Avocat"
+                className="w-full p-2.5 border border-gray-300 rounded-xl bg-gray-50"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Catégorie</label>
+              <label className="block font-semibold text-gray-700 mb-1">Catégorie</label>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value as Recipe['category'])}
-                className="w-full p-2 border border-gray-300 rounded-md"
+                className="w-full p-2.5 border border-gray-300 rounded-xl bg-gray-50 font-medium"
               >
                 {CATEGORIES.map((cat) => (
                   <option key={cat} value={cat}>{cat}</option>
@@ -572,338 +765,283 @@ export default function RecipeManager() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Temps de préparation (min)</label>
+              <label className="block font-semibold text-gray-700 mb-1">Temps de préparation (min)</label>
               <input
                 type="number"
                 value={prepTimeMinutes}
                 onChange={(e) => setPrepTimeMinutes(Number(e.target.value))}
-                className="w-full p-2 border border-gray-300 rounded-md"
+                className="w-full p-2.5 border border-gray-300 rounded-xl bg-gray-50"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nombre de portions de base (ex: 2 pers)</label>
+              <label className="block font-semibold text-gray-700 mb-1">Nombre de portions de base</label>
               <input
                 type="number"
                 min="1"
                 value={baseServings}
                 onChange={(e) => setBaseServings(Number(e.target.value))}
-                className="w-full p-2 border border-gray-300 rounded-md font-bold text-emerald-800"
+                className="w-full p-2.5 border border-gray-300 rounded-xl bg-gray-50 font-bold text-emerald-800"
               />
             </div>
 
-            {/* Photo & Lien Web d'origine */}
+            {/* Photo & Lien Web */}
             <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl border border-gray-200">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">📷 Importer une photo (fichier local)</label>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">📷 Photo (Fichier local)</label>
                 <input
                   type="file"
                   accept="image/*"
                   onChange={handleFileUpload}
-                  className="w-full text-xs text-gray-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-emerald-100 file:text-emerald-700 hover:file:bg-emerald-200"
+                  className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-emerald-100 file:text-emerald-700 hover:file:bg-emerald-200"
                 />
-                <p className="text-[11px] text-gray-400 mt-1">Ou collez une URL d'image ci-dessous :</p>
                 <input
                   type="url"
                   value={imageUrl}
                   onChange={(e) => setImageUrl(e.target.value)}
-                  placeholder="https://..."
-                  className="w-full p-2 border border-gray-300 rounded-md text-xs bg-white mt-1"
+                  placeholder="Ou collez l'URL d'une image..."
+                  className="w-full p-2 border border-gray-300 rounded-lg text-xs bg-white mt-1.5"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">🔗 Lien source / site d'origine</label>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">🔗 Lien source / site d'origine</label>
                 <input
                   type="url"
                   value={sourceUrl}
                   onChange={(e) => setSourceUrl(e.target.value)}
-                  placeholder="https://tiktok.com/... ou https://marmiton.org/..."
-                  className="w-full p-2 border border-gray-300 rounded-md text-xs bg-white"
+                  placeholder="https://tiktok.com/... ou marmiton.org/..."
+                  className="w-full p-2 border border-gray-300 rounded-lg text-xs bg-white"
                 />
-                <p className="text-[11px] text-gray-500 mt-2">
-                  Ce lien vous permettra d'ouvrir directement la vidéo ou la page originale de la recette en un clic.
-                </p>
               </div>
             </div>
           </div>
 
-          {/* Importation texte rapide */}
+          {/* Saisie rapide texte collé */}
           <div className="border border-emerald-200 bg-emerald-50/50 p-4 rounded-xl space-y-3">
             <div className="flex justify-between items-center">
               <div>
-                <h3 className="font-semibold text-emerald-900 text-sm">📋 Importation rapide</h3>
-                <p className="text-xs text-emerald-700">Collez un texte d'ingrédients ou d'instructions.</p>
+                <h3 className="font-semibold text-emerald-900 text-xs">📋 Saisie et importation rapide par collage texte</h3>
+                <p className="text-[11px] text-emerald-700">Collez la liste des ingrédients et/ou des étapes.</p>
               </div>
               <button
                 type="button"
                 onClick={() => setImportMode(!importMode)}
-                className="text-xs bg-emerald-600 text-white px-3 py-1 rounded hover:bg-emerald-700 transition"
+                className="text-xs bg-emerald-600 text-white px-3 py-1 rounded-lg hover:bg-emerald-700 transition font-semibold"
               >
-                {importMode ? 'Masquer' : 'Ouvrir la zone de texte'}
+                {importMode ? 'Masquer' : '⚡ Zone d\'importation'}
               </button>
             </div>
 
             {importMode && (
               <div className="space-y-2">
                 <textarea
-                  rows={6}
+                  rows={5}
                   value={rawText}
                   onChange={(e) => setRawText(e.target.value)}
-                  placeholder={`Collez votre texte ici...`}
-                  className="w-full p-3 border border-gray-300 rounded-md text-sm font-mono bg-white"
+                  placeholder={`Exemple:\n100g flocons d'avoine\n2 oeufs\n1. Mélanger le tout dans un bol\n2. Cuire 5 min à la poêle`}
+                  className="w-full p-3 border border-gray-300 rounded-xl text-xs font-mono bg-white"
                 />
                 <button
                   type="button"
                   onClick={parseRawText}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 rounded-md text-sm transition shadow"
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-xl text-xs transition shadow"
                 >
-                  ⚡ Convertir en Ingrédients & Étapes
+                  ⚡ Convertir automatiquement en Ingrédients & Étapes
                 </button>
               </div>
             )}
           </div>
 
-          {/* Liste des Ingrédients */}
-          <div className="space-y-3">
-            <h3 className="font-semibold text-gray-700">
-              Ingrédients & Macronutriments <span className="text-xs font-normal text-gray-500">(Pour le total des {baseServings} portion(s))</span>
-            </h3>
-            <div className="hidden md:grid md:grid-cols-8 gap-2 px-2 text-xs font-bold text-gray-500 uppercase tracking-wider">
-              <div className="col-span-2">Nom de l'ingrédient</div>
-              <div>Qté</div>
-              <div>Unité</div>
-              <div>Calories (kcal)</div>
-              <div>Protéines (g)</div>
-              <div>Glucides (g)</div>
-              <div>Lipides (g)</div>
+          {/* Tableau des Ingrédients */}
+          <div className="space-y-3 border-t pt-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700">Ingrédients</h3>
+              <button
+                type="button"
+                onClick={addIngredientRow}
+                className="text-xs text-emerald-700 font-bold bg-emerald-50 px-3 py-1 rounded-lg hover:bg-emerald-100 transition"
+              >
+                + Ajouter une ligne
+              </button>
             </div>
 
-            {ingredients.map((ing, idx) => (
-              <div key={idx} className="grid grid-cols-2 md:grid-cols-8 gap-2 items-center bg-gray-50 p-2.5 rounded-lg border border-gray-200/60">
-                <div className="col-span-2">
+            <div className="space-y-2">
+              {ingredients.map((ing, idx) => (
+                <div key={idx} className="grid grid-cols-12 gap-1.5 items-center bg-gray-50 p-2 rounded-xl border border-gray-200 text-xs">
                   <input
                     type="text"
-                    placeholder="ex: Carottes"
-                    value={ing.name}
+                    placeholder="Nom"
+                    value={ing.name || ''}
                     onChange={(e) => updateIngredientField(idx, 'name', e.target.value)}
-                    className="w-full p-1.5 border rounded text-sm bg-white"
+                    className="col-span-4 p-1.5 border rounded-lg bg-white"
                   />
-                </div>
-                <div>
                   <input
                     type="number"
                     placeholder="Qté"
-                    value={ing.amount}
-                    onChange={(e) => updateIngredientField(idx, 'amount', Number(e.target.value))}
-                    className="w-full p-1.5 border rounded text-sm bg-white"
+                    value={ing.amount || ''}
+                    onChange={(e) => updateIngredientField(idx, 'amount', e.target.value)}
+                    className="col-span-2 p-1.5 border rounded-lg bg-white text-center"
                   />
-                </div>
-                <div>
                   <input
                     type="text"
-                    placeholder="g / ml"
-                    value={ing.unit}
+                    placeholder="Unité"
+                    value={ing.unit || 'g'}
                     onChange={(e) => updateIngredientField(idx, 'unit', e.target.value)}
-                    className="w-full p-1.5 border rounded text-sm bg-white"
+                    className="col-span-2 p-1.5 border rounded-lg bg-white text-center"
                   />
-                </div>
-                <div>
                   <input
                     type="number"
-                    placeholder="Kcal"
-                    value={ing.calories}
-                    onChange={(e) => updateIngredientField(idx, 'calories', Number(e.target.value))}
-                    className="w-full p-1.5 border rounded text-sm bg-amber-50 border-amber-200 font-medium"
+                    placeholder="kcal"
+                    value={ing.calories || ''}
+                    onChange={(e) => updateIngredientField(idx, 'calories', e.target.value)}
+                    className="col-span-3 p-1.5 border rounded-lg bg-white text-center font-mono font-semibold"
                   />
-                </div>
-                <div>
-                  <input
-                    type="number"
-                    placeholder="Prot (g)"
-                    value={ing.protein}
-                    onChange={(e) => updateIngredientField(idx, 'protein', Number(e.target.value))}
-                    className="w-full p-1.5 border rounded text-sm bg-emerald-50 border-emerald-200 font-medium"
-                  />
-                </div>
-                <div>
-                  <input
-                    type="number"
-                    placeholder="Gluc (g)"
-                    value={ing.carbs}
-                    onChange={(e) => updateIngredientField(idx, 'carbs', Number(e.target.value))}
-                    className="w-full p-1.5 border rounded text-sm bg-blue-50 border-blue-200 font-medium"
-                  />
-                </div>
-                <div>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      placeholder="Lip (g)"
-                      value={ing.fat}
-                      onChange={(e) => updateIngredientField(idx, 'fat', Number(e.target.value))}
-                      className="w-full p-1.5 border rounded text-sm bg-rose-50 border-rose-200 font-medium"
-                    />
-                    {ingredients.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => setIngredients(ingredients.filter((_, i) => i !== idx))}
-                        className="text-red-400 hover:text-red-600 font-bold px-1"
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            <button
-              type="button"
-              onClick={() => setIngredients([...ingredients, { name: '', amount: 100, unit: 'g', calories: 0, protein: 0, carbs: 0, fat: 0 }])}
-              className="text-sm text-emerald-600 font-semibold hover:underline inline-block mt-1"
-            >
-              + Ajouter un ingrédient
-            </button>
-          </div>
-
-          {/* Instructions */}
-          <div className="space-y-3">
-            <h3 className="font-semibold text-gray-700">Instructions de préparation</h3>
-            {instructions.map((inst, idx) => (
-              <div key={idx} className="flex gap-2 items-start">
-                <span className="text-xs font-bold text-gray-400 mt-2.5">{idx + 1}.</span>
-                <textarea
-                  rows={2}
-                  placeholder={`Étape ${idx + 1}`}
-                  value={inst}
-                  onChange={(e) => {
-                    const copy = [...instructions];
-                    copy[idx] = e.target.value;
-                    setInstructions(copy);
-                  }}
-                  className="w-full p-2 border border-gray-300 rounded-md text-sm"
-                />
-                {instructions.length > 1 && (
                   <button
                     type="button"
-                    onClick={() => setInstructions(instructions.filter((_, i) => i !== idx))}
-                    className="text-red-400 hover:text-red-600 font-bold p-1 mt-1"
+                    onClick={() => removeIngredientRow(idx)}
+                    className="col-span-1 text-rose-500 font-bold text-center hover:text-rose-700"
                   >
                     ✕
                   </button>
-                )}
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={() => setInstructions([...instructions, ''])}
-              className="text-sm text-emerald-600 font-semibold hover:underline"
-            >
-              + Ajouter une étape
-            </button>
+                </div>
+              ))}
+            </div>
           </div>
 
-          <button
-            type="submit"
-            className="w-full bg-emerald-600 text-white font-bold py-3 rounded-lg shadow hover:bg-emerald-700 transition"
-          >
-            {editingRecipeId ? 'Enregistrer les modifications' : 'Enregistrer la recette'}
-          </button>
+          {/* Instructions */}
+          <div className="space-y-3 border-t pt-4 text-xs">
+            <div className="flex justify-between items-center">
+              <h3 className="font-bold uppercase tracking-wider text-gray-700">Étapes de préparation</h3>
+              <button
+                type="button"
+                onClick={addInstructionRow}
+                className="text-emerald-700 font-bold bg-emerald-50 px-3 py-1 rounded-lg hover:bg-emerald-100 transition"
+              >
+                + Ajouter une étape
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {instructions.map((inst, idx) => (
+                <div key={idx} className="flex gap-2 items-center">
+                  <span className="font-bold text-emerald-600 min-w-[20px]">{idx + 1}.</span>
+                  <input
+                    type="text"
+                    value={inst}
+                    onChange={(e) => updateInstructionRow(idx, e.target.value)}
+                    placeholder={`Étape ${idx + 1}...`}
+                    className="flex-1 p-2 border border-gray-300 rounded-xl bg-gray-50 text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeInstructionRow(idx)}
+                    className="text-rose-500 font-bold px-1"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Actions Formulaire */}
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <button
+              type="button"
+              onClick={() => {
+                setShowForm(false);
+                resetForm();
+              }}
+              className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-xl text-xs transition"
+            >
+              Annuler
+            </button>
+            <button
+              type="submit"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs shadow transition"
+            >
+              Enregistrer la recette
+            </button>
+          </div>
         </form>
       )}
 
-      {/* Cartes de Recettes */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredRecipes.map((recipe) => {
-          const totalKcal = recipe.ingredients.reduce((acc, i) => acc + (i.calories || 0), 0);
-          const totalProt = recipe.ingredients.reduce((acc, i) => acc + (i.protein || 0), 0);
-          const totalCarbs = recipe.ingredients.reduce((acc, i) => acc + (i.carbs || 0), 0);
-          const totalFat = recipe.ingredients.reduce((acc, i) => acc + (i.fat || 0), 0);
+      {/* MODALE CHOIX PLANIFICATION HEBDOMADAIRE */}
+      {showAddToPlanModal && viewingRecipe && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <form onSubmit={handleAddToWeeklyPlan} className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b pb-2">
+              <h3 className="font-bold text-gray-800 text-sm">Planifier cette recette</h3>
+              <button
+                type="button"
+                onClick={() => setShowAddToPlanModal(false)}
+                className="text-gray-400 font-bold hover:text-gray-600 text-xs"
+              >
+                ✕
+              </button>
+            </div>
 
-          const servings = recipe.baseServings || 1;
-          const perServingKcal = Math.round(totalKcal / servings);
-          const perServingProt = Math.round(totalProt / servings);
-          const perServingCarbs = Math.round(totalCarbs / servings);
-          const perServingFat = Math.round(totalFat / servings);
+            <p className="text-xs text-gray-600 font-medium">
+              Recette : <strong className="text-emerald-700">{viewingRecipe.title}</strong>
+            </p>
 
-          return (
-            <div key={recipe.id} className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100 flex flex-col justify-between hover:shadow-lg transition">
+            <div className="space-y-3 text-xs">
               <div>
-                <div className="h-44 bg-gray-100 relative overflow-hidden flex items-center justify-center">
-                  {recipe.imageUrl ? (
-                    <img src={recipe.imageUrl} alt={recipe.title} className="h-full w-full object-cover" />
-                  ) : (
-                    <span className="text-gray-400 text-xs">📷 Sans photo</span>
-                  )}
-                  <span className="absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 bg-white/90 text-emerald-800 rounded-full shadow">
-                    {recipe.category}
-                  </span>
-                </div>
-
-                <div className="p-4 space-y-2">
-                  <div className="flex justify-between items-start gap-2">
-                    <h3 className="font-bold text-lg text-gray-800 leading-snug">{recipe.title}</h3>
-                    {recipe.sourceUrl && (
-                      <a
-                        href={recipe.sourceUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs bg-blue-50 text-blue-600 hover:text-blue-800 p-1.5 rounded-md border border-blue-200"
-                        title="Ouvrir le lien d'origine"
-                      >
-                        🔗
-                      </a>
-                    )}
-                  </div>
-
-                  <div className="text-xs text-gray-500 space-x-3">
-                    <span>⏱️ {recipe.prepTimeMinutes} min</span>
-                    <span>🍽️ {servings} portion(s)</span>
-                  </div>
-
-                  {/* Affichage des macros par portion sur la carte */}
-                  <div className="space-y-1 mt-2">
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Par portion :</span>
-                    <div className="grid grid-cols-4 gap-1 bg-gray-50 p-2 rounded text-center text-xs font-semibold text-gray-700">
-                      <div>
-                        <span className="block text-[10px] text-amber-600 uppercase font-bold">Kcal</span>
-                        <span>{perServingKcal}</span>
-                      </div>
-                      <div>
-                        <span className="block text-[10px] text-emerald-600 uppercase font-bold">Prot</span>
-                        <span>{perServingProt}g</span>
-                      </div>
-                      <div>
-                        <span className="block text-[10px] text-blue-600 uppercase font-bold">Gluc</span>
-                        <span>{perServingCarbs}g</span>
-                      </div>
-                      <div>
-                        <span className="block text-[10px] text-rose-600 uppercase font-bold">Lip</span>
-                        <span>{perServingFat}g</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <label className="font-semibold text-gray-600 block mb-1">Jour de la semaine</label>
+                <select
+                  value={planDay}
+                  onChange={(e) => setPlanDay(e.target.value)}
+                  className="w-full p-2.5 border rounded-xl bg-gray-50 font-medium"
+                >
+                  {DAYS.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
               </div>
 
-              <div className="p-4 pt-0 flex justify-between items-center border-t border-gray-50 mt-2 pt-2">
-                <button
-                  onClick={() => openRecipeView(recipe)}
-                  className="text-xs font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-md transition"
+              <div>
+                <label className="font-semibold text-gray-600 block mb-1">Moment du repas</label>
+                <select
+                  value={planMealType}
+                  onChange={(e) => setPlanMealType(e.target.value as MealType)}
+                  className="w-full p-2.5 border rounded-xl bg-gray-50 font-medium"
                 >
-                  📖 Voir / Ajuster les portions
-                </button>
-                <button
-                  onClick={() => handleDelete(recipe.id)}
-                  className="text-xs text-red-400 hover:text-red-600 transition"
-                >
-                  Supprimer
-                </button>
+                  {MEAL_TYPES.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="font-semibold text-gray-600 block mb-1">Portions prévues</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={planServings}
+                  onChange={(e) => setPlanServings(Math.max(1, Number(e.target.value)))}
+                  className="w-full p-2 border rounded-xl bg-gray-50 font-bold text-center"
+                />
               </div>
             </div>
-          );
-        })}
-      </div>
+
+            <div className="pt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowAddToPlanModal(false)}
+                className="w-1/2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2 rounded-xl text-xs transition"
+              >
+                Annuler
+              </button>
+              <button
+                type="submit"
+                className="w-1/2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-xl text-xs transition shadow"
+              >
+                Valider
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
