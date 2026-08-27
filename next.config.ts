@@ -1,10 +1,10 @@
-import type { NextConfig } from 'next';
-
-const nextConfig: NextConfig = {
-  output: 'export',
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  output: "export",
   images: {
     unoptimized: true,
   },
+  basePath: process.env.NODE_ENV === "production" ? "/nutriplanner" : "",
 };
 
 export default nextConfig;
