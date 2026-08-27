@@ -1,7 +1,12 @@
 self.__BUILD_MANIFEST = {
   "__rewrites": {
     "afterFiles": [],
-    "beforeFiles": [],
+    "beforeFiles": [
+      {
+        "source": "/nutriplanner//_next/:path+",
+        "destination": "/nutriplanner/_next/:path+"
+      }
+    ],
     "fallback": []
   },
   "sortedPages": [
