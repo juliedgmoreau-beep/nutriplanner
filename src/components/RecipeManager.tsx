@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Recipe, Ingredient, MealType, PlannedMeal } from '@/types';
+import { Recipe, Ingredient, MealType, PlannedMeal } from '../types';
 
 type ExtendedRecipe = Recipe & {
   sourceUrl?: string;
@@ -337,10 +337,10 @@ export default function RecipeManager() {
     const baseServ = viewingRecipe.baseServings || 1;
     const ratio = planServings / baseServ;
 
-    const totalKcal = viewingRecipe.ingredients.reduce((a, b) => a + (b.calories || 0), 0) * ratio;
-    const totalProt = viewingRecipe.ingredients.reduce((a, b) => a + (b.protein || 0), 0) * ratio;
-    const totalCarbs = viewingRecipe.ingredients.reduce((a, b) => a + (b.carbs || 0), 0) * ratio;
-    const totalFat = viewingRecipe.ingredients.reduce((a, b) => a + (b.fat || 0), 0) * ratio;
+    const totalKcal = viewingRecipe.ingredients.reduce((acc: number, i: Ingredient) => acc + (i.calories || 0), 0) * ratio;
+    const totalProt = viewingRecipe.ingredients.reduce((acc: number, i: Ingredient) => acc + (i.protein || 0), 0) * ratio;
+    const totalCarbs = viewingRecipe.ingredients.reduce((acc: number, i: Ingredient) => acc + (i.carbs || 0), 0) * ratio;
+    const totalFat = viewingRecipe.ingredients.reduce((acc: number, i: Ingredient) => acc + (i.fat || 0), 0) * ratio;
 
     const newMeal: PlannedMeal = {
       id: Date.now().toString(),
@@ -370,10 +370,10 @@ export default function RecipeManager() {
 
   // Calculs pour la vue détaillée (portions)
   const servingRatio = viewingRecipe ? viewServings / (viewingRecipe.baseServings || 1) : 1;
-  const totalRecipeKcal = viewingRecipe ? viewingRecipe.ingredients.reduce((a, b) => a + (b.calories || 0), 0) : 0;
-  const totalRecipeProt = viewingRecipe ? viewingRecipe.ingredients.reduce((a, b) => a + (b.protein || 0), 0) : 0;
-  const totalRecipeCarbs = viewingRecipe ? viewingRecipe.ingredients.reduce((a, b) => a + (b.carbs || 0), 0) : 0;
-  const totalRecipeFat = viewingRecipe ? viewingRecipe.ingredients.reduce((a, b) => a + (b.fat || 0), 0) : 0;
+  const totalRecipeKcal = viewingRecipe ? viewingRecipe.ingredients.reduce((acc: number, i: Ingredient) => acc + (i.calories || 0), 0) : 0;
+  const totalRecipeProt = viewingRecipe ? viewingRecipe.ingredients.reduce((acc: number, i: Ingredient) => acc + (i.protein || 0), 0) : 0;
+  const totalRecipeCarbs = viewingRecipe ? viewingRecipe.ingredients.reduce((acc: number, i: Ingredient) => acc + (i.carbs || 0), 0) : 0;
+  const totalRecipeFat = viewingRecipe ? viewingRecipe.ingredients.reduce((acc: number, i: Ingredient) => acc + (i.fat || 0), 0) : 0;
 
   const currentTotalKcal = totalRecipeKcal * servingRatio;
   const currentTotalProt = totalRecipeProt * servingRatio;
@@ -449,7 +449,7 @@ export default function RecipeManager() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredRecipes.map((recipe) => {
-            const totalKcal = recipe.ingredients.reduce((a, b) => a + (b.calories || 0), 0);
+            const totalKcal = recipe.ingredients.reduce((acc: number, i: Ingredient) => acc + (i.calories || 0), 0);
             return (
               <div
                 key={recipe.id}
@@ -668,378 +668,8 @@ export default function RecipeManager() {
                   <p className="text-xs italic text-gray-400">Aucune étape enregistrée.</p>
                 )}
               </div>
-
-              {/* Photo & Lien (édition directe) */}
-              <div className="bg-gray-50 p-3.5 rounded-xl border border-gray-200/80 space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <label className="font-semibold text-gray-700 block mb-1">📁 Importer/Remplacer photo</label>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleFileUpload}
-                      className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-emerald-100 file:text-emerald-700 hover:file:bg-emerald-200"
-                    />
-                  </div>
-                  <div>
-                    <label className="font-semibold text-gray-700 block mb-1">🔗 Lien source (URL)</label>
-                    <input
-                      type="url"
-                      placeholder="https://..."
-                      value={viewingRecipe.sourceUrl || ''}
-                      onChange={(e) => {
-                        const updated = { ...viewingRecipe, sourceUrl: e.target.value };
-                        setViewingRecipe(updated);
-                        saveRecipes(recipes.map((r) => (r.id === viewingRecipe.id ? updated : r)));
-                      }}
-                      className="w-full p-1.5 border border-gray-300 rounded text-xs bg-white"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Pied de Modale : Boutons Actions */}
-              <div className="border-t pt-4 flex flex-wrap gap-2 justify-between items-center">
-                <button
-                  type="button"
-                  onClick={() => handleDelete(viewingRecipe.id)}
-                  className="text-rose-600 hover:text-rose-700 text-xs font-semibold px-3 py-2 rounded-xl hover:bg-rose-50 transition"
-                >
-                  🗑️ Supprimer
-                </button>
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setShowAddToPlanModal(true)}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs transition shadow-sm flex items-center gap-1.5"
-                  >
-                    <span>📅</span>
-                    <span>Ajouter au planning</span>
-                  </button>
-
-                  <button
-                    onClick={() => setViewingRecipe(null)}
-                    className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold px-4 py-2 rounded-xl text-xs transition"
-                  >
-                    Fermer
-                  </button>
-                </div>
-              </div>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Formulaire de Création / Modification */}
-      {showForm && (
-        <form onSubmit={handleSubmit} className="bg-white p-6 rounded-2xl shadow-md border border-gray-100 space-y-6">
-          <div className="flex justify-between items-center border-b pb-3">
-            <h2 className="text-lg font-bold text-gray-800">
-              {editingRecipeId ? '✏️ Modifier la Recette' : 'Nouvelle Recette'}
-            </h2>
-            <button type="button" onClick={() => setShowForm(false)} className="text-gray-400 font-bold hover:text-gray-600">✕</button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-            <div>
-              <label className="block font-semibold text-gray-700 mb-1">Titre de la recette</label>
-              <input
-                type="text"
-                required
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Ex: Bowl Saumon Avocat"
-                className="w-full p-2.5 border border-gray-300 rounded-xl bg-gray-50"
-              />
-            </div>
-            <div>
-              <label className="block font-semibold text-gray-700 mb-1">Catégorie</label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value as Recipe['category'])}
-                className="w-full p-2.5 border border-gray-300 rounded-xl bg-gray-50 font-medium"
-              >
-                {CATEGORIES.map((cat) => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block font-semibold text-gray-700 mb-1">Temps de préparation (min)</label>
-              <input
-                type="number"
-                value={prepTimeMinutes}
-                onChange={(e) => setPrepTimeMinutes(Number(e.target.value))}
-                className="w-full p-2.5 border border-gray-300 rounded-xl bg-gray-50"
-              />
-            </div>
-            <div>
-              <label className="block font-semibold text-gray-700 mb-1">Nombre de portions de base</label>
-              <input
-                type="number"
-                min="1"
-                value={baseServings}
-                onChange={(e) => setBaseServings(Number(e.target.value))}
-                className="w-full p-2.5 border border-gray-300 rounded-xl bg-gray-50 font-bold text-emerald-800"
-              />
-            </div>
-
-            {/* Photo & Lien Web */}
-            <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl border border-gray-200">
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">📷 Photo (Fichier local)</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-emerald-100 file:text-emerald-700 hover:file:bg-emerald-200"
-                />
-                <input
-                  type="url"
-                  value={imageUrl}
-                  onChange={(e) => setImageUrl(e.target.value)}
-                  placeholder="Ou collez l'URL d'une image..."
-                  className="w-full p-2 border border-gray-300 rounded-lg text-xs bg-white mt-1.5"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">🔗 Lien source / site d'origine</label>
-                <input
-                  type="url"
-                  value={sourceUrl}
-                  onChange={(e) => setSourceUrl(e.target.value)}
-                  placeholder="https://tiktok.com/... ou marmiton.org/..."
-                  className="w-full p-2 border border-gray-300 rounded-lg text-xs bg-white"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Saisie rapide texte collé */}
-          <div className="border border-emerald-200 bg-emerald-50/50 p-4 rounded-xl space-y-3">
-            <div className="flex justify-between items-center">
-              <div>
-                <h3 className="font-semibold text-emerald-900 text-xs">📋 Saisie et importation rapide par collage texte</h3>
-                <p className="text-[11px] text-emerald-700">Collez la liste des ingrédients et/ou des étapes.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setImportMode(!importMode)}
-                className="text-xs bg-emerald-600 text-white px-3 py-1 rounded-lg hover:bg-emerald-700 transition font-semibold"
-              >
-                {importMode ? 'Masquer' : '⚡ Zone d\'importation'}
-              </button>
-            </div>
-
-            {importMode && (
-              <div className="space-y-2">
-                <textarea
-                  rows={5}
-                  value={rawText}
-                  onChange={(e) => setRawText(e.target.value)}
-                  placeholder={`Exemple:\n100g flocons d'avoine\n2 oeufs\n1. Mélanger le tout dans un bol\n2. Cuire 5 min à la poêle`}
-                  className="w-full p-3 border border-gray-300 rounded-xl text-xs font-mono bg-white"
-                />
-                <button
-                  type="button"
-                  onClick={parseRawText}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-xl text-xs transition shadow"
-                >
-                  ⚡ Convertir automatiquement en Ingrédients & Étapes
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Tableau des Ingrédients */}
-          <div className="space-y-3 border-t pt-4">
-            <div className="flex justify-between items-center">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700">Ingrédients</h3>
-              <button
-                type="button"
-                onClick={addIngredientRow}
-                className="text-xs text-emerald-700 font-bold bg-emerald-50 px-3 py-1 rounded-lg hover:bg-emerald-100 transition"
-              >
-                + Ajouter une ligne
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              {ingredients.map((ing, idx) => (
-                <div key={idx} className="grid grid-cols-12 gap-1.5 items-center bg-gray-50 p-2 rounded-xl border border-gray-200 text-xs">
-                  <input
-                    type="text"
-                    placeholder="Nom"
-                    value={ing.name || ''}
-                    onChange={(e) => updateIngredientField(idx, 'name', e.target.value)}
-                    className="col-span-4 p-1.5 border rounded-lg bg-white"
-                  />
-                  <input
-                    type="number"
-                    placeholder="Qté"
-                    value={ing.amount || ''}
-                    onChange={(e) => updateIngredientField(idx, 'amount', e.target.value)}
-                    className="col-span-2 p-1.5 border rounded-lg bg-white text-center"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Unité"
-                    value={ing.unit || 'g'}
-                    onChange={(e) => updateIngredientField(idx, 'unit', e.target.value)}
-                    className="col-span-2 p-1.5 border rounded-lg bg-white text-center"
-                  />
-                  <input
-                    type="number"
-                    placeholder="kcal"
-                    value={ing.calories || ''}
-                    onChange={(e) => updateIngredientField(idx, 'calories', e.target.value)}
-                    className="col-span-3 p-1.5 border rounded-lg bg-white text-center font-mono font-semibold"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeIngredientRow(idx)}
-                    className="col-span-1 text-rose-500 font-bold text-center hover:text-rose-700"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Instructions */}
-          <div className="space-y-3 border-t pt-4 text-xs">
-            <div className="flex justify-between items-center">
-              <h3 className="font-bold uppercase tracking-wider text-gray-700">Étapes de préparation</h3>
-              <button
-                type="button"
-                onClick={addInstructionRow}
-                className="text-emerald-700 font-bold bg-emerald-50 px-3 py-1 rounded-lg hover:bg-emerald-100 transition"
-              >
-                + Ajouter une étape
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              {instructions.map((inst, idx) => (
-                <div key={idx} className="flex gap-2 items-center">
-                  <span className="font-bold text-emerald-600 min-w-[20px]">{idx + 1}.</span>
-                  <input
-                    type="text"
-                    value={inst}
-                    onChange={(e) => updateInstructionRow(idx, e.target.value)}
-                    placeholder={`Étape ${idx + 1}...`}
-                    className="flex-1 p-2 border border-gray-300 rounded-xl bg-gray-50 text-xs"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeInstructionRow(idx)}
-                    className="text-rose-500 font-bold px-1"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Actions Formulaire */}
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <button
-              type="button"
-              onClick={() => {
-                setShowForm(false);
-                resetForm();
-              }}
-              className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-xl text-xs transition"
-            >
-              Annuler
-            </button>
-            <button
-              type="submit"
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs shadow transition"
-            >
-              Enregistrer la recette
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* MODALE CHOIX PLANIFICATION HEBDOMADAIRE */}
-      {showAddToPlanModal && viewingRecipe && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <form onSubmit={handleAddToWeeklyPlan} className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl space-y-4">
-            <div className="flex justify-between items-center border-b pb-2">
-              <h3 className="font-bold text-gray-800 text-sm">Planifier cette recette</h3>
-              <button
-                type="button"
-                onClick={() => setShowAddToPlanModal(false)}
-                className="text-gray-400 font-bold hover:text-gray-600 text-xs"
-              >
-                ✕
-              </button>
-            </div>
-
-            <p className="text-xs text-gray-600 font-medium">
-              Recette : <strong className="text-emerald-700">{viewingRecipe.title}</strong>
-            </p>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="font-semibold text-gray-600 block mb-1">Jour de la semaine</label>
-                <select
-                  value={planDay}
-                  onChange={(e) => setPlanDay(e.target.value)}
-                  className="w-full p-2.5 border rounded-xl bg-gray-50 font-medium"
-                >
-                  {DAYS.map((d) => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-gray-600 block mb-1">Moment du repas</label>
-                <select
-                  value={planMealType}
-                  onChange={(e) => setPlanMealType(e.target.value as MealType)}
-                  className="w-full p-2.5 border rounded-xl bg-gray-50 font-medium"
-                >
-                  {MEAL_TYPES.map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-gray-600 block mb-1">Portions prévues</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={planServings}
-                  onChange={(e) => setPlanServings(Math.max(1, Number(e.target.value)))}
-                  className="w-full p-2 border rounded-xl bg-gray-50 font-bold text-center"
-                />
-              </div>
-            </div>
-
-            <div className="pt-2 flex gap-2">
-              <button
-                type="button"
-                onClick={() => setShowAddToPlanModal(false)}
-                className="w-1/2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2 rounded-xl text-xs transition"
-              >
-                Annuler
-              </button>
-              <button
-                type="submit"
-                className="w-1/2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-xl text-xs transition shadow"
-              >
-                Valider
-              </button>
-            </div>
-          </form>
         </div>
       )}
     </div>
